@@ -19,7 +19,7 @@ public class NetworkController {
     private final NetworkService networkService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK')")
     public ResponseEntity<PageResponse<NetworkResponse>> getAll(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) Boolean active,
@@ -30,7 +30,7 @@ public class NetworkController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER')")
     public ResponseEntity<NetworkResponse> getById(@PathVariable String id) {
         return ResponseEntity.ok(networkService.getById(id));
     }

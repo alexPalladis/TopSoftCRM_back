@@ -62,4 +62,12 @@ public class TicketController {
             @AuthenticationPrincipal CrmUserPrincipal principal) {
         return ResponseEntity.ok(ticketService.countPending(principal.getId()));
     }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<TicketResponse> update(
+            @PathVariable Integer id,
+            @Valid @RequestBody TicketRequest request) {
+        return ResponseEntity.ok(ticketService.update(id, request));
+    }
 }

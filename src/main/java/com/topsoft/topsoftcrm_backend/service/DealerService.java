@@ -10,6 +10,7 @@ import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.NetworkRepository;
 import com.topsoft.topsoftcrm_backend.repository.SubDealerRepository;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -17,6 +18,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -30,8 +33,23 @@ public class DealerService {
     private final IdGeneratorService    idGenerator;
 
     public PageResponse<DealerResponse> getAll(
+            CrmUserPrincipal principal,
             String city, String networkId, Boolean active, String search,
             int page, int size) {
+
+        String effectiveNetworkId = networkId;
+
+        switch (principal.getRole()) {
+            case "NETWORK" -> effectiveNetworkId = principal.getId();
+            case "DEALER"  -> {
+                // Dealer βλέπει μόνο τον εαυτό του
+                return PageResponse.<DealerResponse>builder()
+                        .content(List.of(toResponse(dealerRepository.findById(principal.getId())
+                                .orElseThrow(() -> new ResourceNotFoundException("Dealer δεν βρέθηκε")))))
+                        .page(0).size(1).totalElements(1).totalPages(1).last(true)
+                        .build();
+            }
+        }
 
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
         Page<Dealer> result = dealerRepository.findWithFilters(city, networkId, active, search, pageable);

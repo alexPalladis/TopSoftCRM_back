@@ -24,6 +24,7 @@ public class WebhookService {
     private final SubDealerRepository subDealerRepository;
     private final ReferralCodeRepository referralCodeRepository;
     private final IdGeneratorService   idGenerator;
+    private final CommissionHistoryService commissionHistoryService;
 
     @Value("${app.webhook.secret:}")
     private String webhookSecret;
@@ -66,6 +67,17 @@ public class WebhookService {
         if (dealer == null) {
             log.warn("Webhook: δεν βρέθηκε dealer για referral code: {}", request.getReferralCode());
             return;
+        }
+
+        // Αν έχει πληρωμή, δημιούργησε commission history
+        if (request.getProductId() != null && request.getAmount() != null) {
+            commissionHistoryService.createFromPayment(
+                    request.getAfm(),
+                    request.getProductId(),
+                    request.getAmount(),
+                    request.getPaymentDate(),
+                    request.getExternalRef()
+            );
         }
 
         Customer customer = Customer.builder()

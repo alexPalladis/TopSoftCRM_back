@@ -19,7 +19,7 @@ public class SubDealerController {
     private final SubDealerService subDealerService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER', 'SUBDEALER')")
     public ResponseEntity<PageResponse<SubDealerResponse>> getAll(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String dealerId,

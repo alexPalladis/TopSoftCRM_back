@@ -105,4 +105,17 @@ public class TicketService {
                 .createdAt(t.getCreatedAt())
                 .build();
     }
+
+    @Transactional
+    public TicketResponse update(Integer id, TicketRequest request) {
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Αίτημα δεν βρέθηκε: " + id));
+        ticket.setFromType(request.getFromType());
+        ticket.setFromId(request.getFromId());
+        ticket.setToType(request.getToType());
+        ticket.setToId(request.getToId());
+        ticket.setSubject(request.getSubject());
+        ticket.setBody(request.getBody());
+        return toResponse(ticketRepository.save(ticket));
+    }
 }

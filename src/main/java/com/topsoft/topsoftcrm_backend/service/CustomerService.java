@@ -10,6 +10,7 @@ import com.topsoft.topsoftcrm_backend.model.SubDealer;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.SubDealerRepository;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,12 +28,27 @@ public class CustomerService {
     private final IdGeneratorService  idGenerator;
 
     public PageResponse<CustomerResponse> getAll(
+            CrmUserPrincipal principal,
             String city, String dealerId, String networkId,
             Boolean active, String search, int page, int size) {
 
+        // Φιλτράρισμα ανά ρόλο
+        String effectiveNetworkId = networkId;
+        String effectiveDealerId  = dealerId;
+
+        switch (principal.getRole()) {
+            case "NETWORK"   -> effectiveNetworkId = principal.getId();
+            case "DEALER"    -> effectiveDealerId  = principal.getId();
+            case "SUBDEALER" -> {
+                // SubDealer βλέπει μόνο πελάτες του
+                var sub = subDealerRepository.findById(principal.getId()).orElse(null);
+                if (sub != null) effectiveDealerId = sub.getDealer().getId();
+            }
+        }
+
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
-        Page<Customer> result = customerRepository
-                .findWithFilters(city, dealerId, networkId, active, search, pageable);
+        Page<Customer> result = customerRepository.findWithFilters(
+                city, effectiveDealerId, effectiveNetworkId, active, search, pageable);
 
         return PageResponse.<CustomerResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())

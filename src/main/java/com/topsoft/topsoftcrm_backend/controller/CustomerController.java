@@ -3,12 +3,14 @@ package com.topsoft.topsoftcrm_backend.controller;
 import com.topsoft.topsoftcrm_backend.dto.request.CustomerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.CustomerResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import com.topsoft.topsoftcrm_backend.service.CustomerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -21,6 +23,7 @@ public class CustomerController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER', 'SUBDEALER')")
     public ResponseEntity<PageResponse<CustomerResponse>> getAll(
+            @AuthenticationPrincipal CrmUserPrincipal principal,
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String dealerId,
             @RequestParam(required = false) String networkId,
@@ -29,7 +32,7 @@ public class CustomerController {
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(
-                customerService.getAll(city, dealerId, networkId, active, search, page, size));
+                customerService.getAll(principal, city, dealerId, networkId, active, search, page, size));
     }
 
     @GetMapping("/{id}")

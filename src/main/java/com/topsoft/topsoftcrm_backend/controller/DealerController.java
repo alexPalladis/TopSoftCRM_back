@@ -3,12 +3,14 @@ package com.topsoft.topsoftcrm_backend.controller;
 import com.topsoft.topsoftcrm_backend.dto.request.DealerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.DealerResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import com.topsoft.topsoftcrm_backend.service.DealerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,15 +21,16 @@ public class DealerController {
     private final DealerService dealerService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER')")
     public ResponseEntity<PageResponse<DealerResponse>> getAll(
+            @AuthenticationPrincipal CrmUserPrincipal principal,
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String networkId,
             @RequestParam(required = false) Boolean active,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(dealerService.getAll(city, networkId, active, search, page, size));
+        return ResponseEntity.ok(dealerService.getAll(principal, city, networkId, active, search, page, size));
     }
 
     @GetMapping("/{id}")
