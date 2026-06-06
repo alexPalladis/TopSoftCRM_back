@@ -21,8 +21,9 @@ public class AuthService {
     private final DealerRepository dealerRepository;
     private final SubDealerRepository subDealerRepository;
     private final JwtUtil jwtUtil;
-    private final PasswordEncoder       passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
+    // ------------------------------------------------------------------ LOGIN
     public LoginResponse login(LoginRequest request) {
         String id = request.getId();
         if (id == null || id.length() != 8) {
@@ -39,6 +40,37 @@ public class AuthService {
         };
     }
 
+    // ----------------------------------------------- CALLED BY CONTROLLER
+    // Allows the controller to generate a token after login without coupling
+    // the token string to the LoginResponse DTO.
+    public String generateTokenForUser(String id, String username, String role) {
+        return jwtUtil.generateToken(id, username, role);
+    }
+
+    // ----------------------------------------- USED BY REFRESH ENDPOINT
+    // Returns true if the user still exists and is active (not deactivated).
+    // Admin accounts are always considered active.
+    public boolean isUserActive(String id, String role) {
+        try {
+            return switch (role) {
+                case "ADMIN" -> adminUserRepository.findById(id).isPresent();
+                case "NETWORK" -> networkRepository.findById(id)
+                        .map(n -> Boolean.TRUE.equals(n.getActive()))
+                        .orElse(false);
+                case "DEALER" -> dealerRepository.findById(id)
+                        .map(d -> Boolean.TRUE.equals(d.getActive()))
+                        .orElse(false);
+                case "SUBDEALER" -> subDealerRepository.findById(id)
+                        .map(s -> Boolean.TRUE.equals(s.getActive()))
+                        .orElse(false);
+                default -> false;
+            };
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // -------------------------------------------------------- PRIVATE LOGIN HELPERS
     private LoginResponse loginAdmin(LoginRequest req) {
         var admin = adminUserRepository.findByUsername(req.getUsername())
                 .orElseThrow(() -> new RuntimeException("Λάθος στοιχεία"));
@@ -49,10 +81,10 @@ public class AuthService {
         if (!passwordEncoder.matches(req.getPassword(), admin.getPasswordHash()))
             throw new RuntimeException("Λάθος στοιχεία");
 
-        String token = jwtUtil.generateToken(admin.getId(), admin.getUsername(), UserRole.ADMIN.name());
         return LoginResponse.builder()
-                .token(token).id(admin.getId())
-                .username(admin.getUsername()).role(UserRole.ADMIN)
+                .id(admin.getId())
+                .username(admin.getUsername())
+                .role(UserRole.ADMIN)
                 .build();
     }
 
@@ -69,10 +101,10 @@ public class AuthService {
         if (!network.getActive())
             throw new RuntimeException("Ο λογαριασμός είναι ανενεργός");
 
-        String token = jwtUtil.generateToken(network.getId(), network.getUsername(), UserRole.NETWORK.name());
         return LoginResponse.builder()
-                .token(token).id(network.getId())
-                .username(network.getUsername()).role(UserRole.NETWORK)
+                .id(network.getId())
+                .username(network.getUsername())
+                .role(UserRole.NETWORK)
                 .build();
     }
 
@@ -89,10 +121,10 @@ public class AuthService {
         if (!dealer.getActive())
             throw new RuntimeException("Ο λογαριασμός είναι ανενεργός");
 
-        String token = jwtUtil.generateToken(dealer.getId(), dealer.getUsername(), UserRole.DEALER.name());
         return LoginResponse.builder()
-                .token(token).id(dealer.getId())
-                .username(dealer.getUsername()).role(UserRole.DEALER)
+                .id(dealer.getId())
+                .username(dealer.getUsername())
+                .role(UserRole.DEALER)
                 .build();
     }
 
@@ -109,10 +141,10 @@ public class AuthService {
         if (!subDealer.getActive())
             throw new RuntimeException("Ο λογαριασμός είναι ανενεργός");
 
-        String token = jwtUtil.generateToken(subDealer.getId(), subDealer.getUsername(), UserRole.SUBDEALER.name());
         return LoginResponse.builder()
-                .token(token).id(subDealer.getId())
-                .username(subDealer.getUsername()).role(UserRole.SUBDEALER)
+                .id(subDealer.getId())
+                .username(subDealer.getUsername())
+                .role(UserRole.SUBDEALER)
                 .build();
     }
 }
