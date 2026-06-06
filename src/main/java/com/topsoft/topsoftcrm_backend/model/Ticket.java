@@ -9,7 +9,18 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "tickets")
+@Table(
+        name = "tickets",
+        indexes = {
+                // The main query filters by (fromId OR toId) — both need indexes
+                @Index(name = "idx_tickets_from_id", columnList = "from_id"),
+                @Index(name = "idx_tickets_to_id",   columnList = "to_id"),
+                // Used in the new status filter and the pending-count query
+                @Index(name = "idx_tickets_status",  columnList = "status"),
+                // Used for date range filter and ORDER BY created_at DESC
+                @Index(name = "idx_tickets_created_at", columnList = "created_at"),
+        }
+)
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Ticket {
 

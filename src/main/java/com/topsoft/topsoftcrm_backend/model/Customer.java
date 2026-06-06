@@ -7,7 +7,18 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "customers")
+@Table(
+        name = "customers",
+        indexes = {
+                // Foreign key lookups — used when filtering customers by dealer / network / subdealer
+                @Index(name = "idx_customers_dealer_id",    columnList = "dealer_id"),
+                @Index(name = "idx_customers_network_id",   columnList = "network_id"),
+                @Index(name = "idx_customers_subdealer_id", columnList = "subdealer_id"),
+                // Filter dropdowns and WHERE clauses
+                @Index(name = "idx_customers_city",   columnList = "city"),
+                @Index(name = "idx_customers_active", columnList = "active"),
+        }
+)
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Customer {
 

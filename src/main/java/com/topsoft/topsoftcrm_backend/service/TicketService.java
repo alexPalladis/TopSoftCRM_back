@@ -15,6 +15,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+
 @Service
 @RequiredArgsConstructor
 public class TicketService {
@@ -25,10 +27,23 @@ public class TicketService {
     private final SubDealerRepository subDealerRepository;
     private final AdminUserRepository adminUserRepository;
 
-    public PageResponse<TicketResponse> getAll(String entityId, int page, int size) {
-        var pageable = PageRequest.of(page, size,
-                Sort.by("createdAt").descending());
-        Page<Ticket> result = ticketRepository.findByEntity(entityId, pageable);
+    /**
+     * All filtering is done in the database query.
+     * Null values for status / dateFrom / dateTo are ignored by the query —
+     * the caller passes null when the user has not selected a filter.
+     */
+    public PageResponse<TicketResponse> getAll(
+            String entityId,
+            TicketStatus status,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            int page,
+            int size) {
+
+        var pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+
+        Page<Ticket> result = ticketRepository.findByEntityFiltered(
+                entityId, status, dateFrom, dateTo, pageable);
 
         return PageResponse.<TicketResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
@@ -77,6 +92,21 @@ public class TicketService {
         return ticketRepository.countPendingByEntityId(entityId);
     }
 
+    @Transactional
+    public TicketResponse update(Integer id, TicketRequest request) {
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Αίτημα δεν βρέθηκε: " + id));
+        ticket.setFromType(request.getFromType());
+        ticket.setFromId(request.getFromId());
+        ticket.setToType(request.getToType());
+        ticket.setToId(request.getToId());
+        ticket.setSubject(request.getSubject());
+        ticket.setBody(request.getBody());
+        return toResponse(ticketRepository.save(ticket));
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
     private String resolveEntityName(EntityType type, String id) {
         return switch (type) {
             case ADMIN     -> adminUserRepository.findById(id)
@@ -104,18 +134,5 @@ public class TicketService {
                 .status(t.getStatus())
                 .createdAt(t.getCreatedAt())
                 .build();
-    }
-
-    @Transactional
-    public TicketResponse update(Integer id, TicketRequest request) {
-        Ticket ticket = ticketRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Αίτημα δεν βρέθηκε: " + id));
-        ticket.setFromType(request.getFromType());
-        ticket.setFromId(request.getFromId());
-        ticket.setToType(request.getToType());
-        ticket.setToId(request.getToId());
-        ticket.setSubject(request.getSubject());
-        ticket.setBody(request.getBody());
-        return toResponse(ticketRepository.save(ticket));
     }
 }

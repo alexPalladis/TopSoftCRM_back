@@ -10,7 +10,16 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "commissions")
+@Table(
+        name = "commissions",
+        indexes = {
+                // Commissions are always looked up by entity — index entity_id alone
+                // and also a composite for the common query: "all commissions for entity X"
+                @Index(name = "idx_commissions_entity_id", columnList = "entity_id"),
+                // Composite: covers queries that filter by both entity_id AND product_id
+                @Index(name = "idx_commissions_entity_product", columnList = "entity_id, product_id"),
+        }
+)
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Commission {
 
