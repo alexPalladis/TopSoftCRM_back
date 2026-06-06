@@ -22,33 +22,39 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CustomerService {
 
-    private final CustomerRepository customerRepository;
-    private final DealerRepository dealerRepository;
+    private final CustomerRepository  customerRepository;
+    private final DealerRepository    dealerRepository;
     private final SubDealerRepository subDealerRepository;
     private final IdGeneratorService  idGenerator;
 
+    // ---------------------------------------------------------------------- LIST
     public PageResponse<CustomerResponse> getAll(
             CrmUserPrincipal principal,
             String city, String dealerId, String networkId,
             Boolean active, String search, int page, int size) {
 
-        // Φιλτράρισμα ανά ρόλο
-        String effectiveNetworkId = networkId;
-        String effectiveDealerId  = dealerId;
+        String effectiveNetworkId   = networkId;
+        String effectiveDealerId    = dealerId;
+        String effectiveSubDealerId = null;
 
         switch (principal.getRole()) {
-            case "NETWORK"   -> effectiveNetworkId = principal.getId();
-            case "DEALER"    -> effectiveDealerId  = principal.getId();
-            case "SUBDEALER" -> {
-                // SubDealer βλέπει μόνο πελάτες του
-                var sub = subDealerRepository.findById(principal.getId()).orElse(null);
-                if (sub != null) effectiveDealerId = sub.getDealer().getId();
-            }
+            case "NETWORK"   -> effectiveNetworkId   = principal.getId();
+            case "DEALER"    -> effectiveDealerId     = principal.getId();
+            case "SUBDEALER" -> effectiveSubDealerId  = principal.getId();
         }
 
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
-        Page<Customer> result = customerRepository.findWithFilters(
-                city, effectiveDealerId, effectiveNetworkId, active, search, pageable);
+
+        Page<Customer> result;
+        if (effectiveSubDealerId != null) {
+            // SubDealer sees only their own customers
+            result = customerRepository.findBySubDealerId(
+                    effectiveSubDealerId, city, active, search, pageable);
+        } else {
+            // Admin / Network / Dealer — network is joined via dealer, no stored column
+            result = customerRepository.findWithFilters(
+                    city, effectiveDealerId, effectiveNetworkId, active, search, pageable);
+        }
 
         return PageResponse.<CustomerResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
@@ -60,11 +66,13 @@ public class CustomerService {
                 .build();
     }
 
+    // ---------------------------------------------------------------------- GET
     public CustomerResponse getById(String id) {
         return toResponse(customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Πελάτης δεν βρέθηκε: " + id)));
     }
 
+    // ------------------------------------------------------------------- CREATE
     @Transactional
     public CustomerResponse create(CustomerRequest request) {
         if (customerRepository.existsByAfm(request.getAfm()))
@@ -95,7 +103,7 @@ public class CustomerService {
                 .active(request.getActive() != null ? request.getActive() : true)
                 .dealer(dealer)
                 .subDealer(subDealer)
-                .network(dealer.getNetwork())
+                // network is NOT stored — derived via dealer.getNetwork() at read time
                 .source("MANUAL")
                 .referralCode(request.getReferralCode())
                 .build();
@@ -103,6 +111,7 @@ public class CustomerService {
         return toResponse(customerRepository.save(customer));
     }
 
+    // ------------------------------------------------------------------- UPDATE
     @Transactional
     public CustomerResponse update(String id, CustomerRequest request) {
         Customer customer = customerRepository.findById(id)
@@ -117,6 +126,7 @@ public class CustomerService {
                     .orElseThrow(() -> new ResourceNotFoundException("SubDealer δεν βρέθηκε"));
         }
 
+        customer.setAfm(request.getAfm());
         customer.setEponymia(request.getEponymia());
         customer.setNomimosEkprosopos(request.getNomimosEkprosopos());
         customer.setEpaggelma(request.getEpaggelma());
@@ -129,12 +139,13 @@ public class CustomerService {
         customer.setEmail(request.getEmail());
         customer.setDealer(dealer);
         customer.setSubDealer(subDealer);
-        customer.setNetwork(dealer.getNetwork());
+        // network updates automatically — no action needed, always derived via dealer
         if (request.getActive() != null) customer.setActive(request.getActive());
 
         return toResponse(customerRepository.save(customer));
     }
 
+    // ------------------------------------------------------------------- DELETE
     @Transactional
     public void delete(String id) {
         Customer customer = customerRepository.findById(id)
@@ -142,7 +153,11 @@ public class CustomerService {
         customerRepository.delete(customer);
     }
 
+    // ----------------------------------------------------------------- MAPPING
     private CustomerResponse toResponse(Customer c) {
+        // getNetwork() is the convenience method on Customer — derives via dealer
+        var network = c.getNetwork();
+
         return CustomerResponse.builder()
                 .id(c.getId())
                 .afm(c.getAfm())
@@ -159,10 +174,10 @@ public class CustomerService {
                 .active(c.getActive())
                 .dealerId(c.getDealer().getId())
                 .dealerName(c.getDealer().getEponymia())
-                .subDealerId(c.getSubDealer() != null ? c.getSubDealer().getId() : null)
+                .subDealerId(c.getSubDealer() != null ? c.getSubDealer().getId()         : null)
                 .subDealerName(c.getSubDealer() != null ? c.getSubDealer().getEponymia() : null)
-                .networkId(c.getNetwork() != null ? c.getNetwork().getId() : null)
-                .networkName(c.getNetwork() != null ? c.getNetwork().getEponymia() : null)
+                .networkId(network != null ? network.getId()         : null)
+                .networkName(network != null ? network.getEponymia() : null)
                 .source(c.getSource())
                 .referralCode(c.getReferralCode())
                 .createdAt(c.getCreatedAt())

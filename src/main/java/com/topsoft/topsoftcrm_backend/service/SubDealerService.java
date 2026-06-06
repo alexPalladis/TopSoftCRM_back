@@ -22,18 +22,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class SubDealerService {
 
     private final SubDealerRepository subDealerRepository;
-    private final DealerRepository dealerRepository;
-    private final CustomerRepository customerRepository;
+    private final DealerRepository    dealerRepository;
+    private final CustomerRepository  customerRepository;
     private final PasswordEncoder     passwordEncoder;
     private final IdGeneratorService  idGenerator;
 
+    // ---------------------------------------------------------------------- LIST
     public PageResponse<SubDealerResponse> getAll(
-            String city, String dealerId, Boolean active, String search,
-            int page, int size) {
+            String city, String dealerId, String networkId,
+            Boolean active, String search, int page, int size) {
 
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
         Page<SubDealer> result = subDealerRepository
-                .findWithFilters(city, dealerId, active, search, pageable);
+                .findWithFilters(city, dealerId, networkId, active, search, pageable);
 
         return PageResponse.<SubDealerResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
@@ -45,11 +46,13 @@ public class SubDealerService {
                 .build();
     }
 
+    // ---------------------------------------------------------------------- GET
     public SubDealerResponse getById(String id) {
         return toResponse(subDealerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SubDealer δεν βρέθηκε: " + id)));
     }
 
+    // ------------------------------------------------------------------- CREATE
     @Transactional
     public SubDealerResponse create(SubDealerRequest request) {
         if (subDealerRepository.existsByAfm(request.getAfm()))
@@ -74,13 +77,14 @@ public class SubDealerService {
                 .username(request.getUsername())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .dealer(dealer)
-                .network(dealer.getNetwork())
+                // network is NOT stored — derived via dealer.getNetwork() at read time
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
 
         return toResponse(subDealerRepository.save(subDealer));
     }
 
+    // ------------------------------------------------------------------- UPDATE
     @Transactional
     public SubDealerResponse update(String id, SubDealerRequest request) {
         SubDealer subDealer = subDealerRepository.findById(id)
@@ -100,7 +104,7 @@ public class SubDealerService {
         subDealer.setPhoneMobile(request.getPhoneMobile());
         subDealer.setEmail(request.getEmail());
         subDealer.setDealer(dealer);
-        subDealer.setNetwork(dealer.getNetwork());
+        // network is NOT stored — automatically correct because dealer carries it
         if (request.getActive() != null) subDealer.setActive(request.getActive());
         if (request.getPassword() != null && !request.getPassword().isBlank())
             subDealer.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -108,6 +112,7 @@ public class SubDealerService {
         return toResponse(subDealerRepository.save(subDealer));
     }
 
+    // ------------------------------------------------------------------- DELETE
     @Transactional
     public void delete(String id) {
         SubDealer subDealer = subDealerRepository.findById(id)
@@ -121,8 +126,11 @@ public class SubDealerService {
         subDealerRepository.delete(subDealer);
     }
 
+    // ----------------------------------------------------------------- MAPPING
     private SubDealerResponse toResponse(SubDealer s) {
-        long totalCustomers = customerRepository.countBySubDealerId(s.getId());
+        // getNetwork() is the convenience method on SubDealer — derives via dealer.
+        // dealer is already JOIN FETCHed in the repository query, so no extra query here.
+        var network = s.getNetwork();
 
         return SubDealerResponse.builder()
                 .id(s.getId())
@@ -141,9 +149,9 @@ public class SubDealerService {
                 .active(s.getActive())
                 .dealerId(s.getDealer().getId())
                 .dealerName(s.getDealer().getEponymia())
-                .networkId(s.getNetwork() != null ? s.getNetwork().getId() : null)
-                .networkName(s.getNetwork() != null ? s.getNetwork().getEponymia() : null)
-                .totalCustomers(totalCustomers)
+                .networkId(network != null ? network.getId()       : null)
+                .networkName(network != null ? network.getEponymia() : null)
+                .totalCustomers(customerRepository.countBySubDealerId(s.getId()))
                 .createdAt(s.getCreatedAt())
                 .build();
     }

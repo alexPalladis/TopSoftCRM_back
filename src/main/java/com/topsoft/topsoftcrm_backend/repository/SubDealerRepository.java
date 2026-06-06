@@ -8,21 +8,32 @@ import org.springframework.data.jpa.repository.Query;
 import java.util.Optional;
 
 public interface SubDealerRepository extends JpaRepository<SubDealer, String> {
+
     Optional<SubDealer> findByUsername(String username);
     boolean existsByAfm(String afm);
-
-    @Query("""
-        SELECT s FROM SubDealer s
-        LEFT JOIN FETCH s.dealer
-        LEFT JOIN FETCH s.network
-        WHERE (:city IS NULL OR s.city = :city)
-        AND (:dealerId IS NULL OR s.dealer.id = :dealerId)
-        AND (:active IS NULL OR s.active = :active)
-        AND (:search IS NULL OR s.afm LIKE %:search% OR LOWER(s.eponymia) LIKE LOWER(CONCAT('%',:search,'%')))
-    """)
-    Page<SubDealer> findWithFilters(String city, String dealerId, Boolean active, String search, Pageable pageable);
+    long countByDealerId(String dealerId);
 
     @Query("SELECT COUNT(c) FROM Customer c WHERE c.subDealer.id = :subDealerId")
     long countCustomersBySubDealerId(String subDealerId);
-    long countByDealerId(String dealerId);
+
+    // Network filtering: join dealer, then dealer.network — no stored network_id
+    @Query("""
+        SELECT s FROM SubDealer s
+        JOIN FETCH s.dealer d
+        LEFT JOIN FETCH d.network
+        WHERE (:city      IS NULL OR s.city        = :city)
+          AND (:dealerId  IS NULL OR d.id           = :dealerId)
+          AND (:networkId IS NULL OR d.network.id   = :networkId)
+          AND (:active    IS NULL OR s.active        = :active)
+          AND (:search    IS NULL
+               OR s.afm LIKE %:search%
+               OR LOWER(s.eponymia) LIKE LOWER(CONCAT('%',:search,'%')))
+    """)
+    Page<SubDealer> findWithFilters(
+            String city,
+            String dealerId,
+            String networkId,
+            Boolean active,
+            String search,
+            Pageable pageable);
 }

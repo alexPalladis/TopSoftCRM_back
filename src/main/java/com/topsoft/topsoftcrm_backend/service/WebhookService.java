@@ -19,11 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class WebhookService {
 
-    private final CustomerRepository customerRepository;
-    private final DealerRepository dealerRepository;
-    private final SubDealerRepository subDealerRepository;
-    private final ReferralCodeRepository referralCodeRepository;
-    private final IdGeneratorService   idGenerator;
+    private final CustomerRepository       customerRepository;
+    private final DealerRepository         dealerRepository;
+    private final SubDealerRepository      subDealerRepository;
+    private final ReferralCodeRepository   referralCodeRepository;
+    private final IdGeneratorService       idGenerator;
     private final CommissionHistoryService commissionHistoryService;
 
     @Value("${app.webhook.secret:}")
@@ -31,19 +31,20 @@ public class WebhookService {
 
     @Transactional
     public void handleCustomerRegister(WebhookCustomerRequest request, String secret) {
-        // Έλεγχος secret
+
+        // Validate secret
         if (!webhookSecret.isBlank() && !webhookSecret.equals(secret)) {
             throw new RuntimeException("Μη εξουσιοδοτημένο webhook request");
         }
 
-        // Αν υπάρχει ήδη το ΑΦΜ, ενημέρωσε μόνο
+        // If AFM already exists, skip silently
         if (customerRepository.existsByAfm(request.getAfm())) {
             log.info("Webhook: πελάτης με ΑΦΜ {} υπάρχει ήδη", request.getAfm());
             return;
         }
 
-        // Βρες dealer/subdealer από referral code
-        Dealer dealer       = null;
+        // Resolve dealer / subdealer from referral code
+        Dealer    dealer    = null;
         SubDealer subDealer = null;
 
         if (request.getReferralCode() != null && !request.getReferralCode().isBlank()) {
@@ -69,7 +70,7 @@ public class WebhookService {
             return;
         }
 
-        // Αν έχει πληρωμή, δημιούργησε commission history
+        // If payment data present, create commission history
         if (request.getProductId() != null && request.getAmount() != null) {
             commissionHistoryService.createFromPayment(
                     request.getAfm(),
@@ -86,17 +87,17 @@ public class WebhookService {
                 .eponymia(request.getEponymia())
                 .nomimosEkprosopos(request.getNomimosEkprosopos())
                 .epaggelma(request.getEpaggelma() != null ? request.getEpaggelma() : "—")
-                .doy(request.getDoy() != null ? request.getDoy() : "—")
-                .address(request.getAddress() != null ? request.getAddress() : "—")
-                .city(request.getCity() != null ? request.getCity() : "—")
-                .tk(request.getTk() != null ? request.getTk() : "00000")
+                .doy(request.getDoy()         != null ? request.getDoy()         : "—")
+                .address(request.getAddress() != null ? request.getAddress()     : "—")
+                .city(request.getCity()       != null ? request.getCity()        : "—")
+                .tk(request.getTk()           != null ? request.getTk()          : "00000")
                 .phoneFixed(request.getPhoneFixed())
                 .phoneMobile(request.getPhoneMobile())
                 .email(request.getEmail())
                 .active(true)
                 .dealer(dealer)
                 .subDealer(subDealer)
-                .network(dealer.getNetwork())
+                // network is NOT stored — derived via dealer.getNetwork() at read time
                 .source("API")
                 .referralCode(request.getReferralCode())
                 .build();

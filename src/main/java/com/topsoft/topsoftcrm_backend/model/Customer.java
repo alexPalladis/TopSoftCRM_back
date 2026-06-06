@@ -10,13 +10,13 @@ import java.time.LocalDateTime;
 @Table(
         name = "customers",
         indexes = {
-                // Foreign key lookups — used when filtering customers by dealer / network / subdealer
+                // dealer_id is the primary FK for all customer filtering
                 @Index(name = "idx_customers_dealer_id",    columnList = "dealer_id"),
-                @Index(name = "idx_customers_network_id",   columnList = "network_id"),
+                // subdealer_id used when filtering "my customers" from subdealer role
                 @Index(name = "idx_customers_subdealer_id", columnList = "subdealer_id"),
-                // Filter dropdowns and WHERE clauses
-                @Index(name = "idx_customers_city",   columnList = "city"),
-                @Index(name = "idx_customers_active", columnList = "active"),
+                // network is derived via dealer — no network_id column stored here
+                @Index(name = "idx_customers_city",         columnList = "city"),
+                @Index(name = "idx_customers_active",       columnList = "active"),
         }
 )
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -62,17 +62,18 @@ public class Customer {
     @Column(nullable = false)
     private Boolean active = true;
 
+    // Mandatory — every customer must have a dealer
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id", nullable = false)
     private Dealer dealer;
 
+    // Optional — customer may or may not belong to a subdealer
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "subdealer_id")
     private SubDealer subDealer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "network_id")
-    private Network network;
+    // network_id is NOT stored here — derived at query time via dealer.network
+    // This eliminates stale data when admin moves a dealer to a different network
 
     @Column(length = 10, nullable = false)
     private String source = "MANUAL";
@@ -87,4 +88,11 @@ public class Customer {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // -----------------------------------------------------------------------
+    // Convenience accessor — never stored, always derived.
+    // -----------------------------------------------------------------------
+    public Network getNetwork() {
+        return dealer != null ? dealer.getNetwork() : null;
+    }
 }

@@ -10,12 +10,11 @@ import java.time.LocalDateTime;
 @Table(
         name = "subdealers",
         indexes = {
-                // Foreign key lookups
-                @Index(name = "idx_subdealers_dealer_id",  columnList = "dealer_id"),
-                @Index(name = "idx_subdealers_network_id", columnList = "network_id"),
-                // Filter used in list pages
-                @Index(name = "idx_subdealers_city",   columnList = "city"),
-                @Index(name = "idx_subdealers_active", columnList = "active"),
+                // The ONLY FK a subdealer needs — its direct parent.
+                // Network is always derived via: subdealer → dealer → network
+                @Index(name = "idx_subdealers_dealer_id", columnList = "dealer_id"),
+                @Index(name = "idx_subdealers_city",      columnList = "city"),
+                @Index(name = "idx_subdealers_active",    columnList = "active"),
         }
 )
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -64,13 +63,10 @@ public class SubDealer {
     @Column(name = "password_hash", length = 255, nullable = false)
     private String passwordHash;
 
+    // ONLY direct parent — network is resolved at query time via dealer.network
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id", nullable = false)
     private Dealer dealer;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "network_id")
-    private Network network;
 
     @Column(nullable = false)
     private Boolean active = true;
@@ -82,4 +78,12 @@ public class SubDealer {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // -----------------------------------------------------------------------
+    // Convenience accessor — never stored, always derived. Safe to call
+    // only when dealer is already loaded (LAZY, so call within a transaction).
+    // -----------------------------------------------------------------------
+    public Network getNetwork() {
+        return dealer != null ? dealer.getNetwork() : null;
+    }
 }

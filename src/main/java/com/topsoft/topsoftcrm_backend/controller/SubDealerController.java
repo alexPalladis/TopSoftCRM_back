@@ -23,12 +23,13 @@ public class SubDealerController {
     public ResponseEntity<PageResponse<SubDealerResponse>> getAll(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String dealerId,
+            @RequestParam(required = false) String networkId,  // filters via dealer.network
             @RequestParam(required = false) Boolean active,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(
-                subDealerService.getAll(city, dealerId, active, search, page, size));
+                subDealerService.getAll(city, dealerId, networkId, active, search, page, size));
     }
 
     @GetMapping("/{id}")
