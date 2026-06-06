@@ -4,8 +4,11 @@ import com.topsoft.topsoftcrm_backend.dto.request.DealerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.DealerResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
+import com.topsoft.topsoftcrm_backend.model.Commission;
 import com.topsoft.topsoftcrm_backend.model.Dealer;
 import com.topsoft.topsoftcrm_backend.model.Network;
+import com.topsoft.topsoftcrm_backend.model.enums.EntityType;
+import com.topsoft.topsoftcrm_backend.repository.CommissionRepository;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.NetworkRepository;
@@ -25,13 +28,19 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DealerService {
 
-    private final DealerRepository dealerRepository;
-    private final NetworkRepository networkRepository;
-    private final SubDealerRepository subDealerRepository;
-    private final CustomerRepository customerRepository;
-    private final PasswordEncoder       passwordEncoder;
-    private final IdGeneratorService    idGenerator;
+    private final DealerRepository     dealerRepository;
+    private final NetworkRepository    networkRepository;
+    private final SubDealerRepository  subDealerRepository;
+    private final CustomerRepository   customerRepository;
+    private final CommissionRepository commissionRepository;
+    private final PasswordEncoder      passwordEncoder;
+    private final IdGeneratorService   idGenerator;
 
+    // Reserved sentinel entity_id for the global Dealer commission defaults.
+    // Set by the Admin in the Τιμοκατάλογος page and copied to every new Dealer.
+    private static final String DEALER_DEFAULT_ID = "00000020";
+
+    // ------------------------------------------------------------------- LIST
     public PageResponse<DealerResponse> getAll(
             CrmUserPrincipal principal,
             String city, String networkId, Boolean active, String search,
@@ -42,7 +51,7 @@ public class DealerService {
         switch (principal.getRole()) {
             case "NETWORK" -> effectiveNetworkId = principal.getId();
             case "DEALER"  -> {
-                // Dealer βλέπει μόνο τον εαυτό του
+                // Dealer sees only themselves
                 return PageResponse.<DealerResponse>builder()
                         .content(List.of(toResponse(dealerRepository.findById(principal.getId())
                                 .orElseThrow(() -> new ResourceNotFoundException("Dealer δεν βρέθηκε")))))
@@ -52,7 +61,7 @@ public class DealerService {
         }
 
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
-        Page<Dealer> result = dealerRepository.findWithFilters(city, networkId, active, search, pageable);
+        Page<Dealer> result = dealerRepository.findWithFilters(city, effectiveNetworkId, active, search, pageable);
 
         return PageResponse.<DealerResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
@@ -64,11 +73,13 @@ public class DealerService {
                 .build();
     }
 
+    // -------------------------------------------------------------------- GET
     public DealerResponse getById(String id) {
         return toResponse(dealerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dealer δεν βρέθηκε: " + id)));
     }
 
+    // ----------------------------------------------------------------- CREATE
     @Transactional
     public DealerResponse create(DealerRequest request) {
         if (dealerRepository.existsByAfm(request.getAfm()))
@@ -99,9 +110,29 @@ public class DealerService {
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
 
-        return toResponse(dealerRepository.save(dealer));
+        dealerRepository.save(dealer);
+
+        // ── Pre-fill commissions from global Dealer defaults ────────────────
+        // Copies the 8 rows that the Admin set in the Τιμοκατάλογος page
+        // (stored under the sentinel entity_id "00000020") to this new dealer.
+        // If no defaults have been set yet, this loop is a no-op.
+        List<Commission> defaults = commissionRepository
+                .findByEntityTypeAndEntityId(EntityType.DEALER, DEALER_DEFAULT_ID);
+        for (Commission def : defaults) {
+            Commission c = Commission.builder()
+                    .entityType(EntityType.DEALER)
+                    .entityId(dealer.getId())
+                    .productId(def.getProductId())
+                    .percentage(def.getPercentage())
+                    .salePrice(def.getSalePrice())
+                    .build();
+            commissionRepository.save(c);
+        }
+
+        return toResponse(dealer);
     }
 
+    // ----------------------------------------------------------------- UPDATE
     @Transactional
     public DealerResponse update(String id, DealerRequest request) {
         Dealer dealer = dealerRepository.findById(id)
@@ -131,6 +162,7 @@ public class DealerService {
         return toResponse(dealerRepository.save(dealer));
     }
 
+    // ----------------------------------------------------------------- DELETE
     @Transactional
     public void delete(String id) {
         Dealer dealer = dealerRepository.findById(id)
@@ -143,6 +175,7 @@ public class DealerService {
         dealerRepository.delete(dealer);
     }
 
+    // --------------------------------------------------------------- MAPPING
     private DealerResponse toResponse(Dealer d) {
         long totalSubDealers = subDealerRepository.countByDealerId(d.getId());
         long totalCustomers  = customerRepository.countByDealerId(d.getId());
@@ -162,7 +195,7 @@ public class DealerService {
                 .email(d.getEmail())
                 .username(d.getUsername())
                 .active(d.getActive())
-                .networkId(d.getNetwork() != null ? d.getNetwork().getId() : null)
+                .networkId(d.getNetwork() != null ? d.getNetwork().getId()       : null)
                 .networkName(d.getNetwork() != null ? d.getNetwork().getEponymia() : null)
                 .totalSubDealers(totalSubDealers)
                 .totalCustomers(totalCustomers)

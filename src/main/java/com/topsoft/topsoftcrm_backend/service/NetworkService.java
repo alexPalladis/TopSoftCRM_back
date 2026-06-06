@@ -4,7 +4,10 @@ import com.topsoft.topsoftcrm_backend.dto.request.NetworkRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.NetworkResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
+import com.topsoft.topsoftcrm_backend.model.Commission;
 import com.topsoft.topsoftcrm_backend.model.Network;
+import com.topsoft.topsoftcrm_backend.model.enums.EntityType;
+import com.topsoft.topsoftcrm_backend.repository.CommissionRepository;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.NetworkRepository;
@@ -16,16 +19,24 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class NetworkService {
 
-    private final NetworkRepository networkRepository;
-    private final DealerRepository dealerRepository;
-    private final CustomerRepository customerRepository;
-    private final PasswordEncoder    passwordEncoder;
-    private final IdGeneratorService idGenerator;
+    private final NetworkRepository    networkRepository;
+    private final DealerRepository     dealerRepository;
+    private final CustomerRepository   customerRepository;
+    private final CommissionRepository commissionRepository;
+    private final PasswordEncoder      passwordEncoder;
+    private final IdGeneratorService   idGenerator;
 
+    // Reserved sentinel entity_id for the global Network commission defaults.
+    // Set by the Admin in the Τιμοκατάλογος page and copied to every new Network.
+    private static final String NETWORK_DEFAULT_ID = "00000010";
+
+    // ------------------------------------------------------------------- LIST
     public PageResponse<NetworkResponse> getAll(
             String city, Boolean active, String search,
             int page, int size) {
@@ -43,12 +54,14 @@ public class NetworkService {
                 .build();
     }
 
+    // -------------------------------------------------------------------- GET
     public NetworkResponse getById(String id) {
         Network network = networkRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε: " + id));
         return toResponse(network);
     }
 
+    // ----------------------------------------------------------------- CREATE
     @Transactional
     public NetworkResponse create(NetworkRequest request) {
         if (networkRepository.existsByAfm(request.getAfm()))
@@ -74,9 +87,29 @@ public class NetworkService {
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
 
-        return toResponse(networkRepository.save(network));
+        networkRepository.save(network);
+
+        // ── Pre-fill commissions from global Network defaults ───────────────
+        // Copies the 8 rows that the Admin set in the Τιμοκατάλογος page
+        // (stored under the sentinel entity_id "00000010") to this new network.
+        // If no defaults have been set yet, this loop is a no-op.
+        List<Commission> defaults = commissionRepository
+                .findByEntityTypeAndEntityId(EntityType.NETWORK, NETWORK_DEFAULT_ID);
+        for (Commission def : defaults) {
+            Commission c = Commission.builder()
+                    .entityType(EntityType.NETWORK)
+                    .entityId(network.getId())
+                    .productId(def.getProductId())
+                    .percentage(def.getPercentage())
+                    .salePrice(def.getSalePrice())
+                    .build();
+            commissionRepository.save(c);
+        }
+
+        return toResponse(network);
     }
 
+    // ----------------------------------------------------------------- UPDATE
     @Transactional
     public NetworkResponse update(String id, NetworkRequest request) {
         Network network = networkRepository.findById(id)
@@ -99,6 +132,7 @@ public class NetworkService {
         return toResponse(networkRepository.save(network));
     }
 
+    // ----------------------------------------------------------------- DELETE
     @Transactional
     public void delete(String id) {
         Network network = networkRepository.findById(id)
@@ -111,6 +145,7 @@ public class NetworkService {
         networkRepository.delete(network);
     }
 
+    // --------------------------------------------------------------- MAPPING
     private NetworkResponse toResponse(Network n) {
         long totalDealers   = dealerRepository.findByNetworkId(n.getId()).size();
         long totalCustomers = customerRepository.countByNetworkId(n.getId());
