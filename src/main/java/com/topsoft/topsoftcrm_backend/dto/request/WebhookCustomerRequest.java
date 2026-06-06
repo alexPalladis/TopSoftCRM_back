@@ -2,9 +2,12 @@ package com.topsoft.topsoftcrm_backend.dto.request;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-
+/**
+ * Payload for POST /api/webhook/customer/register
+ *
+ * Contains only customer identity and referral data.
+ * Payment information is now handled by WebhookPaymentRequest.
+ */
 @Data
 public class WebhookCustomerRequest {
     private String afm;
@@ -19,8 +22,6 @@ public class WebhookCustomerRequest {
     private String phoneMobile;
     private String email;
     private String referralCode;
-    private Integer productId;
-    private BigDecimal amount;
-    private LocalDate paymentDate;
-    private String externalRef;
+    // NOTE: productId / amount / paymentDate / externalRef intentionally removed.
+    // Payments are handled by POST /api/webhook/payment (WebhookPaymentRequest).
 }

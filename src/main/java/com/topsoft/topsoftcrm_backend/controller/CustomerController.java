@@ -1,6 +1,7 @@
 package com.topsoft.topsoftcrm_backend.controller;
 
 import com.topsoft.topsoftcrm_backend.dto.request.CustomerRequest;
+import com.topsoft.topsoftcrm_backend.dto.request.CustomerReassignRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.CustomerResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
@@ -42,7 +43,7 @@ public class CustomerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CustomerResponse> create(
             @Valid @RequestBody CustomerRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -50,7 +51,7 @@ public class CustomerController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CustomerResponse> update(
             @PathVariable String id,
             @Valid @RequestBody CustomerRequest request) {
@@ -62,5 +63,26 @@ public class CustomerController {
     public ResponseEntity<Void> delete(@PathVariable String id) {
         customerService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * PATCH /api/customers/{id}/reassign
+     *
+     * Reassign a customer to a different subdealer.
+     *
+     * Rules (enforced server-side):
+     *  - ADMIN  : can reassign to any subdealer (or clear the subdealer by passing null)
+     *  - DEALER : can only reassign to one of their own subdealers
+     *
+     * The dealer itself cannot be changed here — only the subdealer link.
+     * To change the dealer, the admin uses the standard PUT /customers/{id} endpoint.
+     */
+    @PatchMapping("/{id}/reassign")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEALER')")
+    public ResponseEntity<CustomerResponse> reassign(
+            @PathVariable String id,
+            @AuthenticationPrincipal CrmUserPrincipal principal,
+            @Valid @RequestBody CustomerReassignRequest request) {
+        return ResponseEntity.ok(customerService.reassign(id, principal, request));
     }
 }

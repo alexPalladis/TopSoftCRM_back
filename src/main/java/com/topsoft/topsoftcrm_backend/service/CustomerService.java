@@ -1,5 +1,6 @@
 package com.topsoft.topsoftcrm_backend.service;
 
+import com.topsoft.topsoftcrm_backend.dto.request.CustomerReassignRequest;
 import com.topsoft.topsoftcrm_backend.dto.request.CustomerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.CustomerResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
@@ -15,8 +16,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -182,5 +185,58 @@ public class CustomerService {
                 .referralCode(c.getReferralCode())
                 .createdAt(c.getCreatedAt())
                 .build();
+    }
+
+    // ----------------------------------------------------------------- REASSIGN
+    /**
+     * Reassign a customer to a different subdealer.
+     *
+     * ADMIN  : can set any subdealer, or null to clear the link.
+     * DEALER : can only set a subdealer that belongs to them.
+     *          Cannot clear the subdealer (must pass a valid subDealerId).
+     */
+    @Transactional
+    public CustomerResponse reassign(
+            String customerId,
+            CrmUserPrincipal principal,
+            CustomerReassignRequest request) {
+
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Πελάτης δεν βρέθηκε: " + customerId));
+
+        String role = principal.getRole();
+
+        if ("DEALER".equals(role)) {
+            // Dealer can only reassign customers that belong to them
+            if (!customer.getDealer().getId().equals(principal.getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Δεν έχετε δικαίωμα να αλλάξετε αυτόν τον πελάτη");
+            }
+            // Dealer must supply a subDealerId (cannot clear it)
+            if (request.getSubDealerId() == null || request.getSubDealerId().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Ο dealer πρέπει να επιλέξει έναν sub-dealer");
+            }
+            // The chosen subdealer must belong to this dealer
+            SubDealer subDealer = subDealerRepository.findById(request.getSubDealerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Sub-dealer δεν βρέθηκε"));
+            if (!subDealer.getDealer().getId().equals(principal.getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Ο sub-dealer δεν ανήκει στο δίκτυό σας");
+            }
+            customer.setSubDealer(subDealer);
+
+        } else if ("ADMIN".equals(role)) {
+            // Admin can set any subdealer or clear with null
+            if (request.getSubDealerId() == null || request.getSubDealerId().isBlank()) {
+                customer.setSubDealer(null);
+            } else {
+                SubDealer subDealer = subDealerRepository.findById(request.getSubDealerId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Sub-dealer δεν βρέθηκε"));
+                customer.setSubDealer(subDealer);
+            }
+        }
+
+        return toResponse(customerRepository.save(customer));
     }
 }

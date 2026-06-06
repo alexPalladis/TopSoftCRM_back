@@ -15,7 +15,7 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
 
 server:
-  port: ${DB_PORT}
+  port: ${SERVER_PORT}
 
 app:
   jwt:
