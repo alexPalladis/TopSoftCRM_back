@@ -11,6 +11,7 @@ import com.topsoft.topsoftcrm_backend.repository.CommissionRepository;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.NetworkRepository;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -31,39 +32,34 @@ public class NetworkService {
     private final CommissionRepository commissionRepository;
     private final PasswordEncoder      passwordEncoder;
     private final IdGeneratorService   idGenerator;
+    private final AuditLogService      auditLogService;          // ← NEW
 
-    // Reserved sentinel entity_id for the global Network commission defaults.
-    // Set by the Admin in the Τιμοκατάλογος page and copied to every new Network.
     private static final String NETWORK_DEFAULT_ID = "00000010";
 
     // ------------------------------------------------------------------- LIST
     public PageResponse<NetworkResponse> getAll(
-            String city, Boolean active, String search,
-            int page, int size) {
+            String city, Boolean active, String search, int page, int size) {
 
         var pageable = PageRequest.of(page, size, Sort.by("eponymia").ascending());
         Page<Network> result = networkRepository.findWithFilters(city, active, search, pageable);
 
         return PageResponse.<NetworkResponse>builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
-                .page(result.getNumber())
-                .size(result.getSize())
+                .page(result.getNumber()).size(result.getSize())
                 .totalElements(result.getTotalElements())
-                .totalPages(result.getTotalPages())
-                .last(result.isLast())
+                .totalPages(result.getTotalPages()).last(result.isLast())
                 .build();
     }
 
     // -------------------------------------------------------------------- GET
     public NetworkResponse getById(String id) {
-        Network network = networkRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε: " + id));
-        return toResponse(network);
+        return toResponse(networkRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε: " + id)));
     }
 
     // ----------------------------------------------------------------- CREATE
     @Transactional
-    public NetworkResponse create(NetworkRequest request) {
+    public NetworkResponse create(NetworkRequest request, CrmUserPrincipal actor) {
         if (networkRepository.existsByAfm(request.getAfm()))
             throw new RuntimeException("ΑΦΜ υπάρχει ήδη");
         if (networkRepository.existsByUsername(request.getUsername()))
@@ -89,29 +85,31 @@ public class NetworkService {
 
         networkRepository.save(network);
 
-        // ── Pre-fill commissions from global Network defaults ───────────────
-        // Copies the 8 rows that the Admin set in the Τιμοκατάλογος page
-        // (stored under the sentinel entity_id "00000010") to this new network.
-        // If no defaults have been set yet, this loop is a no-op.
+        // Pre-fill commissions from global Network defaults
         List<Commission> defaults = commissionRepository
                 .findByEntityTypeAndEntityId(EntityType.NETWORK, NETWORK_DEFAULT_ID);
         for (Commission def : defaults) {
-            Commission c = Commission.builder()
+            commissionRepository.save(Commission.builder()
                     .entityType(EntityType.NETWORK)
                     .entityId(network.getId())
                     .productId(def.getProductId())
                     .percentage(def.getPercentage())
                     .salePrice(def.getSalePrice())
-                    .build();
-            commissionRepository.save(c);
+                    .build());
         }
+
+        // ── Audit log ──────────────────────────────────────────────────────
+        auditLogService.log(
+                actor.getId(), actor.getRole(), actor.getUsername(),
+                "NETWORK", network.getId(), network.getEponymia(),
+                "CREATE", "Δημιουργία network: " + network.getEponymia());
 
         return toResponse(network);
     }
 
     // ----------------------------------------------------------------- UPDATE
     @Transactional
-    public NetworkResponse update(String id, NetworkRequest request) {
+    public NetworkResponse update(String id, NetworkRequest request, CrmUserPrincipal actor) {
         Network network = networkRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε: " + id));
 
@@ -129,18 +127,34 @@ public class NetworkService {
         if (request.getPassword() != null && !request.getPassword().isBlank())
             network.setPasswordHash(passwordEncoder.encode(request.getPassword()));
 
-        return toResponse(networkRepository.save(network));
+        NetworkResponse response = toResponse(networkRepository.save(network));
+
+        // ── Audit log ──────────────────────────────────────────────────────
+        auditLogService.log(
+                actor.getId(), actor.getRole(), actor.getUsername(),
+                "NETWORK", network.getId(), network.getEponymia(),
+                "UPDATE", "Ενημέρωση network: " + network.getEponymia());
+
+        return response;
     }
 
     // ----------------------------------------------------------------- DELETE
     @Transactional
-    public void delete(String id) {
+    public void delete(String id, CrmUserPrincipal actor) {
         Network network = networkRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε: " + id));
 
         long dealerCount = networkRepository.countDealersByNetworkId(id);
         if (dealerCount > 0)
             throw new RuntimeException("Δεν μπορεί να διαγραφεί — έχει " + dealerCount + " dealers");
+
+        String eponymia = network.getEponymia(); // capture before delete
+
+        // ── Audit log ──────────────────────────────────────────────────────
+        auditLogService.log(
+                actor.getId(), actor.getRole(), actor.getUsername(),
+                "NETWORK", id, eponymia,
+                "DELETE", "Διαγραφή network: " + eponymia);
 
         networkRepository.delete(network);
     }
@@ -151,22 +165,12 @@ public class NetworkService {
         long totalCustomers = customerRepository.countByNetworkId(n.getId());
 
         return NetworkResponse.builder()
-                .id(n.getId())
-                .afm(n.getAfm())
-                .eponymia(n.getEponymia())
-                .nomimosEkprosopos(n.getNomimosEkprosopos())
-                .epaggelma(n.getEpaggelma())
-                .doy(n.getDoy())
-                .address(n.getAddress())
-                .city(n.getCity())
-                .tk(n.getTk())
-                .phoneFixed(n.getPhoneFixed())
-                .phoneMobile(n.getPhoneMobile())
-                .email(n.getEmail())
-                .username(n.getUsername())
-                .active(n.getActive())
-                .totalDealers(totalDealers)
-                .totalCustomers(totalCustomers)
+                .id(n.getId()).afm(n.getAfm()).eponymia(n.getEponymia())
+                .nomimosEkprosopos(n.getNomimosEkprosopos()).epaggelma(n.getEpaggelma())
+                .doy(n.getDoy()).address(n.getAddress()).city(n.getCity()).tk(n.getTk())
+                .phoneFixed(n.getPhoneFixed()).phoneMobile(n.getPhoneMobile())
+                .email(n.getEmail()).username(n.getUsername()).active(n.getActive())
+                .totalDealers(totalDealers).totalCustomers(totalCustomers)
                 .createdAt(n.getCreatedAt())
                 .build();
     }

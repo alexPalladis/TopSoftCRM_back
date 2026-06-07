@@ -45,38 +45,30 @@ public class CustomerController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CustomerResponse> create(
-            @Valid @RequestBody CustomerRequest request) {
+            @Valid @RequestBody CustomerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(customerService.create(request));
+                .body(customerService.create(request, principal));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CustomerResponse> update(
             @PathVariable String id,
-            @Valid @RequestBody CustomerRequest request) {
-        return ResponseEntity.ok(customerService.update(id, request));
+            @Valid @RequestBody CustomerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        return ResponseEntity.ok(customerService.update(id, request, principal));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable String id) {
-        customerService.delete(id);
+    public ResponseEntity<Void> delete(
+            @PathVariable String id,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        customerService.delete(id, principal);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * PATCH /api/customers/{id}/reassign
-     *
-     * Reassign a customer to a different subdealer.
-     *
-     * Rules (enforced server-side):
-     *  - ADMIN  : can reassign to any subdealer (or clear the subdealer by passing null)
-     *  - DEALER : can only reassign to one of their own subdealers
-     *
-     * The dealer itself cannot be changed here — only the subdealer link.
-     * To change the dealer, the admin uses the standard PUT /customers/{id} endpoint.
-     */
     @PatchMapping("/{id}/reassign")
     @PreAuthorize("hasAnyRole('ADMIN', 'DEALER')")
     public ResponseEntity<CustomerResponse> reassign(

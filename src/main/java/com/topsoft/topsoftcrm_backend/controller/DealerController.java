@@ -41,22 +41,28 @@ public class DealerController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK')")
-    public ResponseEntity<DealerResponse> create(@Valid @RequestBody DealerRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(dealerService.create(request));
+    public ResponseEntity<DealerResponse> create(
+            @Valid @RequestBody DealerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(dealerService.create(request, principal));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK')")
     public ResponseEntity<DealerResponse> update(
             @PathVariable String id,
-            @Valid @RequestBody DealerRequest request) {
-        return ResponseEntity.ok(dealerService.update(id, request));
+            @Valid @RequestBody DealerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        return ResponseEntity.ok(dealerService.update(id, request, principal));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable String id) {
-        dealerService.delete(id);
+    public ResponseEntity<Void> delete(
+            @PathVariable String id,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        dealerService.delete(id, principal);
         return ResponseEntity.noContent().build();
     }
 }

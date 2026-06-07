@@ -27,6 +27,7 @@ public class CommissionHistoryService {
     private final CommissionRepository commissionRepository;
     private final CustomerRepository customerRepository;
     private final ProductRepository productRepository;
+    private final AuditLogService auditLogService;
 
     public PageResponse<CommissionHistoryResponse> getAll(
             LocalDate dateFrom, LocalDate dateTo,

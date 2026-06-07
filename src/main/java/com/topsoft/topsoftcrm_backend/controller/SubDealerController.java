@@ -3,12 +3,14 @@ package com.topsoft.topsoftcrm_backend.controller;
 import com.topsoft.topsoftcrm_backend.dto.request.SubDealerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.SubDealerResponse;
+import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import com.topsoft.topsoftcrm_backend.service.SubDealerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -23,7 +25,7 @@ public class SubDealerController {
     public ResponseEntity<PageResponse<SubDealerResponse>> getAll(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String dealerId,
-            @RequestParam(required = false) String networkId,  // filters via dealer.network
+            @RequestParam(required = false) String networkId,
             @RequestParam(required = false) Boolean active,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0")  int page,
@@ -41,23 +43,27 @@ public class SubDealerController {
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'DEALER')")
     public ResponseEntity<SubDealerResponse> create(
-            @Valid @RequestBody SubDealerRequest request) {
+            @Valid @RequestBody SubDealerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(subDealerService.create(request));
+                .body(subDealerService.create(request, principal));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DEALER')")
     public ResponseEntity<SubDealerResponse> update(
             @PathVariable String id,
-            @Valid @RequestBody SubDealerRequest request) {
-        return ResponseEntity.ok(subDealerService.update(id, request));
+            @Valid @RequestBody SubDealerRequest request,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        return ResponseEntity.ok(subDealerService.update(id, request, principal));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DEALER')")
-    public ResponseEntity<Void> delete(@PathVariable String id) {
-        subDealerService.delete(id);
+    public ResponseEntity<Void> delete(
+            @PathVariable String id,
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        subDealerService.delete(id, principal);
         return ResponseEntity.noContent().build();
     }
 }
