@@ -7,12 +7,24 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: validate   # Flyway διαχειρίζεται το schema — το Hibernate μόνο επαληθεύει
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
+
+  # ── Flyway ────────────────────────────────────────────────────────────────
+  # Τρέχει αυτόματα πριν ανοίξει η εφαρμογή.
+  # Διαβάζει τα αρχεία: src/main/resources/db/migration/V1__*.sql, V2__*.sql ...
+  # ΚΑΝΟΝΑΣ: ποτέ μην επεξεργάζεσαι αρχείο που έχει ήδη εφαρμοστεί.
+  #          Κάθε αλλαγή schema = νέο αρχείο V2__, V3__ κ.ο.κ.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    out-of-order: false
 
   jackson:
     default-property-inclusion: non_null
