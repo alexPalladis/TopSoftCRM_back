@@ -2,6 +2,7 @@ package com.topsoft.topsoftcrm_backend.service;
 
 import com.topsoft.topsoftcrm_backend.dto.request.DealerRequest;
 import com.topsoft.topsoftcrm_backend.dto.response.DealerResponse;
+import com.topsoft.topsoftcrm_backend.dto.response.LookupResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
 import com.topsoft.topsoftcrm_backend.model.Commission;
@@ -24,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -224,5 +226,41 @@ public class DealerService {
         String candidate = "D" + suffix;
         if (!referralCodeRepository.existsById(candidate)) return candidate;
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+    }
+
+    public List<LookupResponse> getLookup(CrmUserPrincipal principal) {
+        return switch (principal.getRole()) {
+            case "ADMIN" -> dealerRepository.findAllByActiveTrueOrderByEponymiaAsc()
+                    .stream()
+                    .map(d -> new LookupResponse(d.getId(), d.getEponymia()))
+                    .toList();
+
+            case "NETWORK" -> {
+                // Βλέπει μόνο dealers του δικτύου του
+                yield dealerRepository.findByNetworkId(principal.getId())
+                        .stream()
+                        .filter(d -> Boolean.TRUE.equals(d.getActive()))
+                        .sorted(Comparator.comparing(Dealer::getEponymia))
+                        .map(d -> new LookupResponse(d.getId(), d.getEponymia()))
+                        .toList();
+            }
+
+            case "DEALER" -> {
+                // Βλέπει μόνο τον εαυτό του
+                Dealer self = dealerRepository.findById(principal.getId()).orElse(null);
+                yield self != null
+                        ? List.of(new LookupResponse(self.getId(), self.getEponymia()))
+                        : List.of();
+            }
+
+            case "SUBDEALER" -> {
+                // Βλέπει μόνο τον dealer που ανήκει
+                yield dealerRepository.findDealerBySubDealerId(principal.getId())
+                        .map(d -> List.of(new LookupResponse(d.getId(), d.getEponymia())))
+                        .orElse(List.of());
+            }
+
+            default -> List.of();
+        };
     }
 }

@@ -35,4 +35,14 @@ public interface NetworkRepository extends JpaRepository<Network, String> {
             @Param("search") String search,
             Pageable pageable
     );
+
+    List<Network> findAllByActiveTrueOrderByEponymiaAsc();
+
+    // Για DEALER lookup — βρες το network που ανήκει ο dealer
+    @Query("SELECT n FROM Network n WHERE n.id = (SELECT d.network.id FROM Dealer d WHERE d.id = :dealerId)")
+    Optional<Network> findNetworkByDealerId(@Param("dealerId") String dealerId);
+
+    // Για SUBDEALER lookup — βρες το network μέσω dealer
+    @Query("SELECT n FROM Network n WHERE n.id = (SELECT d.network.id FROM Dealer d JOIN SubDealer s ON s.dealer.id = d.id WHERE s.id = :subDealerId)")
+    Optional<Network> findNetworkBySubDealerId(@Param("subDealerId") String subDealerId);
 }

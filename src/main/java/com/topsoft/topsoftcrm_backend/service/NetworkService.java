@@ -1,6 +1,7 @@
 package com.topsoft.topsoftcrm_backend.service;
 
 import com.topsoft.topsoftcrm_backend.dto.request.NetworkRequest;
+import com.topsoft.topsoftcrm_backend.dto.response.LookupResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.NetworkResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
@@ -173,5 +174,38 @@ public class NetworkService {
                 .totalDealers(totalDealers).totalCustomers(totalCustomers)
                 .createdAt(n.getCreatedAt())
                 .build();
+    }
+
+    public List<LookupResponse> getLookup(CrmUserPrincipal principal) {
+        return switch (principal.getRole()) {
+            case "ADMIN" -> networkRepository.findAllByActiveTrueOrderByEponymiaAsc()
+                    .stream()
+                    .map(n -> new LookupResponse(n.getId(), n.getEponymia()))
+                    .toList();
+
+            case "NETWORK" -> {
+                // Βλέπει μόνο τον εαυτό του
+                Network self = networkRepository.findById(principal.getId()).orElse(null);
+                yield self != null
+                        ? List.of(new LookupResponse(self.getId(), self.getEponymia()))
+                        : List.of();
+            }
+
+            case "DEALER" -> {
+                // Βλέπει μόνο το network που ανήκει (αν έχει)
+                yield networkRepository.findNetworkByDealerId(principal.getId())
+                        .map(n -> List.of(new LookupResponse(n.getId(), n.getEponymia())))
+                        .orElse(List.of());
+            }
+
+            case "SUBDEALER" -> {
+                // Βλέπει μόνο το network μέσω dealer του (αν έχει)
+                yield networkRepository.findNetworkBySubDealerId(principal.getId())
+                        .map(n -> List.of(new LookupResponse(n.getId(), n.getEponymia())))
+                        .orElse(List.of());
+            }
+
+            default -> List.of();
+        };
     }
 }

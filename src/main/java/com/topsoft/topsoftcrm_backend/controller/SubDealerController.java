@@ -1,6 +1,7 @@
 package com.topsoft.topsoftcrm_backend.controller;
 
 import com.topsoft.topsoftcrm_backend.dto.request.SubDealerRequest;
+import com.topsoft.topsoftcrm_backend.dto.response.LookupResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.SubDealerResponse;
 import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
@@ -12,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/subdealers")
@@ -65,5 +68,12 @@ public class SubDealerController {
             @AuthenticationPrincipal CrmUserPrincipal principal) {
         subDealerService.delete(id, principal);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/lookup")
+    @PreAuthorize("hasAnyRole('ADMIN', 'NETWORK', 'DEALER', 'SUBDEALER')")
+    public ResponseEntity<List<LookupResponse>> getLookup(
+            @AuthenticationPrincipal CrmUserPrincipal principal) {
+        return ResponseEntity.ok(subDealerService.getLookup(principal));
     }
 }
