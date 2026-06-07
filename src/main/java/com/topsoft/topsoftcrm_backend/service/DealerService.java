@@ -7,11 +7,13 @@ import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
 import com.topsoft.topsoftcrm_backend.model.Commission;
 import com.topsoft.topsoftcrm_backend.model.Dealer;
 import com.topsoft.topsoftcrm_backend.model.Network;
+import com.topsoft.topsoftcrm_backend.model.ReferralCode;
 import com.topsoft.topsoftcrm_backend.model.enums.EntityType;
 import com.topsoft.topsoftcrm_backend.repository.CommissionRepository;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
 import com.topsoft.topsoftcrm_backend.repository.NetworkRepository;
+import com.topsoft.topsoftcrm_backend.repository.ReferralCodeRepository;
 import com.topsoft.topsoftcrm_backend.repository.SubDealerRepository;
 import com.topsoft.topsoftcrm_backend.security.CrmUserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -23,21 +25,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class DealerService {
 
-    private final DealerRepository     dealerRepository;
-    private final NetworkRepository    networkRepository;
-    private final SubDealerRepository  subDealerRepository;
-    private final CustomerRepository   customerRepository;
-    private final CommissionRepository commissionRepository;
-    private final PasswordEncoder      passwordEncoder;
-    private final IdGeneratorService   idGenerator;
+    private final DealerRepository       dealerRepository;
+    private final NetworkRepository      networkRepository;
+    private final SubDealerRepository    subDealerRepository;
+    private final CustomerRepository     customerRepository;
+    private final CommissionRepository   commissionRepository;
+    private final ReferralCodeRepository referralCodeRepository;  // ← νέο
+    private final PasswordEncoder        passwordEncoder;
+    private final IdGeneratorService     idGenerator;
 
     // Reserved sentinel entity_id for the global Dealer commission defaults.
-    // Set by the Admin in the Τιμοκατάλογος page and copied to every new Dealer.
     private static final String DEALER_DEFAULT_ID = "00000020";
 
     // ------------------------------------------------------------------- LIST
@@ -51,7 +54,6 @@ public class DealerService {
         switch (principal.getRole()) {
             case "NETWORK" -> effectiveNetworkId = principal.getId();
             case "DEALER"  -> {
-                // Dealer sees only themselves
                 return PageResponse.<DealerResponse>builder()
                         .content(List.of(toResponse(dealerRepository.findById(principal.getId())
                                 .orElseThrow(() -> new ResourceNotFoundException("Dealer δεν βρέθηκε")))))
@@ -112,10 +114,7 @@ public class DealerService {
 
         dealerRepository.save(dealer);
 
-        // ── Pre-fill commissions from global Dealer defaults ────────────────
-        // Copies the 8 rows that the Admin set in the Τιμοκατάλογος page
-        // (stored under the sentinel entity_id "00000020") to this new dealer.
-        // If no defaults have been set yet, this loop is a no-op.
+        // ── Pre-fill commissions from global Dealer defaults ──────────────────
         List<Commission> defaults = commissionRepository
                 .findByEntityTypeAndEntityId(EntityType.DEALER, DEALER_DEFAULT_ID);
         for (Commission def : defaults) {
@@ -128,6 +127,19 @@ public class DealerService {
                     .build();
             commissionRepository.save(c);
         }
+
+        // ── Δημιουργία referral code για τον νέο Dealer ───────────────────────
+        // Το code είναι μοναδικό 8ψήφιο string (π.χ. "D2000001").
+        // Prefix "D" + τα τελευταία 7 ψηφία του dealer ID.
+        String referralCode = generateDealerReferralCode(dealer.getId());
+        referralCodeRepository.save(
+                ReferralCode.builder()
+                        .code(referralCode)
+                        .entityType(EntityType.DEALER)
+                        .entityId(dealer.getId())
+                        .active(true)
+                        .build()
+        );
 
         return toResponse(dealer);
     }
@@ -144,6 +156,7 @@ public class DealerService {
                     .orElseThrow(() -> new ResourceNotFoundException("Network δεν βρέθηκε"));
         }
 
+        dealer.setAfm(request.getAfm());
         dealer.setEponymia(request.getEponymia());
         dealer.setNomimosEkprosopos(request.getNomimosEkprosopos());
         dealer.setEpaggelma(request.getEpaggelma());
@@ -168,18 +181,24 @@ public class DealerService {
         Dealer dealer = dealerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dealer δεν βρέθηκε: " + id));
 
+        long subCount      = subDealerRepository.countByDealerId(id);
         long customerCount = customerRepository.countByDealerId(id);
+
+        if (subCount > 0)
+            throw new RuntimeException("Δεν μπορεί να διαγραφεί — έχει " + subCount + " sub-dealers");
         if (customerCount > 0)
             throw new RuntimeException("Δεν μπορεί να διαγραφεί — έχει " + customerCount + " πελάτες");
+
+        // Διαγραφή referral codes του dealer
+        referralCodeRepository.findByEntityIdAndActiveTrue(id)
+                .ifPresent(referralCodeRepository::delete);
 
         dealerRepository.delete(dealer);
     }
 
-    // --------------------------------------------------------------- MAPPING
+    // ----------------------------------------------------------------- MAPPING
     private DealerResponse toResponse(Dealer d) {
-        long totalSubDealers = subDealerRepository.countByDealerId(d.getId());
-        long totalCustomers  = customerRepository.countByDealerId(d.getId());
-
+        var network = d.getNetwork();
         return DealerResponse.builder()
                 .id(d.getId())
                 .afm(d.getAfm())
@@ -195,11 +214,24 @@ public class DealerService {
                 .email(d.getEmail())
                 .username(d.getUsername())
                 .active(d.getActive())
-                .networkId(d.getNetwork() != null ? d.getNetwork().getId()       : null)
-                .networkName(d.getNetwork() != null ? d.getNetwork().getEponymia() : null)
-                .totalSubDealers(totalSubDealers)
-                .totalCustomers(totalCustomers)
+                .networkId(network != null ? network.getId()         : null)
+                .networkName(network != null ? network.getEponymia() : null)
+                .totalSubDealers(subDealerRepository.countByDealerId(d.getId()))
                 .createdAt(d.getCreatedAt())
                 .build();
+    }
+
+    // ── Referral code generation ──────────────────────────────────────────────
+    // Format: "D" + τα 7 τελευταία ψηφία του dealer ID  →  π.χ. "D2000001"
+    // Αν υπάρχει σύγκρουση (εξαιρετικά σπάνιο), fallback σε UUID prefix.
+    private String generateDealerReferralCode(String dealerId) {
+        // dealerId is like "20000001" — take last 7 chars
+        String suffix = dealerId.substring(Math.max(0, dealerId.length() - 7));
+        String candidate = "D" + suffix;
+        if (!referralCodeRepository.existsById(candidate)) {
+            return candidate;
+        }
+        // Fallback: first 8 chars of UUID (collision-safe)
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }

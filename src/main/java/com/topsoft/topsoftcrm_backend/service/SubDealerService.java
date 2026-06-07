@@ -5,9 +5,12 @@ import com.topsoft.topsoftcrm_backend.dto.response.PageResponse;
 import com.topsoft.topsoftcrm_backend.dto.response.SubDealerResponse;
 import com.topsoft.topsoftcrm_backend.exception.ResourceNotFoundException;
 import com.topsoft.topsoftcrm_backend.model.Dealer;
+import com.topsoft.topsoftcrm_backend.model.ReferralCode;
 import com.topsoft.topsoftcrm_backend.model.SubDealer;
+import com.topsoft.topsoftcrm_backend.model.enums.EntityType;
 import com.topsoft.topsoftcrm_backend.repository.CustomerRepository;
 import com.topsoft.topsoftcrm_backend.repository.DealerRepository;
+import com.topsoft.topsoftcrm_backend.repository.ReferralCodeRepository;
 import com.topsoft.topsoftcrm_backend.repository.SubDealerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -17,15 +20,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class SubDealerService {
 
-    private final SubDealerRepository subDealerRepository;
-    private final DealerRepository    dealerRepository;
-    private final CustomerRepository  customerRepository;
-    private final PasswordEncoder     passwordEncoder;
-    private final IdGeneratorService  idGenerator;
+    private final SubDealerRepository    subDealerRepository;
+    private final DealerRepository       dealerRepository;
+    private final CustomerRepository     customerRepository;
+    private final ReferralCodeRepository referralCodeRepository;  // ← νέο
+    private final PasswordEncoder        passwordEncoder;
+    private final IdGeneratorService     idGenerator;
 
     // ---------------------------------------------------------------------- LIST
     public PageResponse<SubDealerResponse> getAll(
@@ -77,11 +83,24 @@ public class SubDealerService {
                 .username(request.getUsername())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .dealer(dealer)
-                // network is NOT stored — derived via dealer.getNetwork() at read time
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
 
-        return toResponse(subDealerRepository.save(subDealer));
+        subDealerRepository.save(subDealer);
+
+        // ── Δημιουργία referral code για τον νέο SubDealer ────────────────────
+        // Format: "S" + τα 7 τελευταία ψηφία του subdealer ID  →  π.χ. "S3000001"
+        String referralCode = generateSubDealerReferralCode(subDealer.getId());
+        referralCodeRepository.save(
+                ReferralCode.builder()
+                        .code(referralCode)
+                        .entityType(EntityType.SUBDEALER)
+                        .entityId(subDealer.getId())
+                        .active(true)
+                        .build()
+        );
+
+        return toResponse(subDealer);
     }
 
     // ------------------------------------------------------------------- UPDATE
@@ -104,7 +123,6 @@ public class SubDealerService {
         subDealer.setPhoneMobile(request.getPhoneMobile());
         subDealer.setEmail(request.getEmail());
         subDealer.setDealer(dealer);
-        // network is NOT stored — automatically correct because dealer carries it
         if (request.getActive() != null) subDealer.setActive(request.getActive());
         if (request.getPassword() != null && !request.getPassword().isBlank())
             subDealer.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -123,13 +141,15 @@ public class SubDealerService {
             throw new RuntimeException(
                     "Δεν μπορεί να διαγραφεί — έχει " + customerCount + " πελάτες");
 
+        // Διαγραφή referral code του subdealer
+        referralCodeRepository.findByEntityIdAndActiveTrue(id)
+                .ifPresent(referralCodeRepository::delete);
+
         subDealerRepository.delete(subDealer);
     }
 
     // ----------------------------------------------------------------- MAPPING
     private SubDealerResponse toResponse(SubDealer s) {
-        // getNetwork() is the convenience method on SubDealer — derives via dealer.
-        // dealer is already JOIN FETCHed in the repository query, so no extra query here.
         var network = s.getNetwork();
 
         return SubDealerResponse.builder()
@@ -149,10 +169,21 @@ public class SubDealerService {
                 .active(s.getActive())
                 .dealerId(s.getDealer().getId())
                 .dealerName(s.getDealer().getEponymia())
-                .networkId(network != null ? network.getId()       : null)
+                .networkId(network != null ? network.getId()         : null)
                 .networkName(network != null ? network.getEponymia() : null)
                 .totalCustomers(customerRepository.countBySubDealerId(s.getId()))
                 .createdAt(s.getCreatedAt())
                 .build();
+    }
+
+    // ── Referral code generation ──────────────────────────────────────────────
+    // Format: "S" + τα 7 τελευταία ψηφία του subdealer ID  →  π.χ. "S3000001"
+    private String generateSubDealerReferralCode(String subDealerId) {
+        String suffix    = subDealerId.substring(Math.max(0, subDealerId.length() - 7));
+        String candidate = "S" + suffix;
+        if (!referralCodeRepository.existsById(candidate)) {
+            return candidate;
+        }
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }
